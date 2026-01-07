@@ -356,11 +356,31 @@ def setup_optimizer(model, args, logger):
         weight_decay=args.weight_decay
     )
     
-    # Learning rate scheduler (optional, to be implemented)
+    # Learning rate scheduler with warmup
     scheduler = None
     if args.warmup_steps > 0:
         logger.info(f"  Warmup steps: {args.warmup_steps}")
-        # TODO: Implement learning rate scheduler with warmup
+        logger.info("  Using linear warmup scheduler")
+        
+        # Create a lambda function for linear warmup
+        def lr_lambda(step):
+            """
+            Learning rate schedule:
+            - Linear warmup from 0 to base_lr over warmup_steps
+            - Constant base_lr after warmup
+            """
+            if step < args.warmup_steps:
+                # Linear warmup: LR increases from 0 to base_lr
+                return step / args.warmup_steps
+            else:
+                # After warmup: constant learning rate
+                return 1.0
+        
+        # Use LambdaLR scheduler with the warmup function
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+        logger.info(f"  Learning rate will warmup from 0 to {args.learning_rate} over {args.warmup_steps} steps")
+    else:
+        logger.info("  No learning rate scheduler (warmup_steps=0)")
     
     return optimizer, scheduler
 
