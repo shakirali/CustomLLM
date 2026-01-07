@@ -493,13 +493,59 @@ def validate(model, val_dataloader, criterion, device, logger):
     Returns:
         dict: Validation metrics (loss, perplexity, etc.)
     """
-    # TODO: Implement validation
-    # 1. Set model to eval mode
-    # 2. Iterate through validation batches
-    # 3. Compute loss
-    # 4. Calculate metrics (loss, perplexity)
+    # 1. Set model to evaluation mode
+    model.eval()
     
-    pass
+    # 2. Initialize accumulators
+    total_loss = 0.0
+    total_tokens = 0
+    
+    # 3. Iterate through validation batches (no gradients needed)
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(val_dataloader):
+            # Move batch to device
+            input_ids, target_ids = batch
+            input_ids = input_ids.to(device)
+            target_ids = target_ids.to(device)
+            
+            # Forward pass
+            logits = model(input_ids)  # Shape: (batch_size, seq_len, vocab_size)
+            
+            # Reshape for loss computation
+            # CrossEntropyLoss expects: (N, C) for logits, (N,) for targets
+            # where N = batch_size * seq_len, C = vocab_size
+            vocab_size = logits.shape[-1]
+            logits_flat = logits.view(-1, vocab_size)  # (batch_size * seq_len, vocab_size)
+            targets_flat = target_ids.view(-1)  # (batch_size * seq_len,)
+            
+            # Compute loss
+            loss = criterion(logits_flat, targets_flat)
+            
+            # Accumulate losses weighted by number of tokens
+            # This ensures correct averaging when batches have different sizes
+            num_tokens = targets_flat.numel()
+            total_loss += loss.item() * num_tokens
+            total_tokens += num_tokens
+    
+    # 4. Calculate metrics
+    if total_tokens > 0:
+        avg_loss = total_loss / total_tokens
+        perplexity = torch.exp(torch.tensor(avg_loss)).item()
+    else:
+        avg_loss = 0.0
+        perplexity = 1.0
+        logger.warning("No tokens processed during validation")
+    
+    # 5. Return metrics dictionary
+    metrics = {
+        'loss': avg_loss,
+        'perplexity': perplexity,
+        'total_tokens': total_tokens
+    }
+    
+    logger.info(f"Validation completed: {total_tokens} tokens processed")
+    
+    return metrics
 
 
 def train(args):
