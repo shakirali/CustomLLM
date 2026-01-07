@@ -562,27 +562,64 @@ def train(args):
         # Set model to training mode
         model.train()
         
-        # TODO: Implement training loop
-        # for batch_idx, batch in enumerate(train_dataloader):
-        #     # Training step
-        #     loss = train_step(...)
-        #     
-        #     # Logging
-        #     if global_step % args.log_every == 0:
-        #         logger.info(...)
-        #     
-        #     # Validation
-        #     if global_step % args.val_every == 0:
-        #         val_metrics = validate(...)
-        #         logger.info(...)
-        #     
-        #     # Checkpointing
-        #     if global_step % args.save_every == 0:
-        #         save_checkpoint(...)
-        #     
-        #     global_step += 1
+        # Track metrics for this epoch
+        epoch_losses = []
         
-        logger.info(f"Epoch {epoch + 1} completed")
+        # Iterate through batches
+        for batch_idx, batch in enumerate(train_dataloader):
+            # Training step
+            loss = train_step(
+                model=model,
+                batch=batch,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=device,
+                grad_clip=args.grad_clip,
+                logger=logger
+            )
+            
+            # Track loss for epoch average
+            epoch_losses.append(loss)
+            
+            # Update learning rate scheduler if available
+            if scheduler is not None:
+                scheduler.step()
+            
+            # Logging (periodic)
+            if global_step % args.log_every == 0:
+                current_lr = optimizer.param_groups[0]['lr']
+                logger.info(
+                    f"Step {global_step}: "
+                    f"Loss = {loss:.4f}, "
+                    f"LR = {current_lr:.2e}, "
+                    f"Batch {batch_idx + 1}/{len(train_dataloader)}"
+                )
+            
+            # Validation (periodic)
+            if global_step % args.val_every == 0 and val_dataloader is not None:
+                val_metrics = validate(model, val_dataloader, criterion, device, logger)
+                if val_metrics is not None:
+                    logger.info(
+                        f"Validation - Loss: {val_metrics.get('loss', 0.0):.4f}, "
+                        f"Perplexity: {val_metrics.get('perplexity', 0.0):.2f}"
+                    )
+            
+            # Checkpointing (periodic)
+            if global_step % args.save_every == 0:
+                save_checkpoint(
+                    model, optimizer, epoch, global_step, loss,
+                    args.checkpoint_dir, logger
+                )
+            
+            # Increment global step
+            global_step += 1
+        
+        # Log epoch summary
+        if epoch_losses:
+            avg_epoch_loss = sum(epoch_losses) / len(epoch_losses)
+            logger.info(f"Epoch {epoch + 1} completed - Average Loss: {avg_epoch_loss:.4f}")
+        else:
+            logger.info(f"Epoch {epoch + 1} completed")
     
     logger.info("=" * 70)
     logger.info("Training completed!")
